@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+        POSTGRES_USER: stockflow
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+        POSTGRES_DB: stockflow
+    ports:
+      - "${POSTGRES_HOST_IP:-127.0.0.1}:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+        - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "stockflow", "-d", "stockflow" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+      start_interval: 5s
+volumes:
+  postgres_data:
