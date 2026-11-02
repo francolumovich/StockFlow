@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: 001-create-organization.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 002-seed-organizations.sql
+      relativeToChangelogFile: true

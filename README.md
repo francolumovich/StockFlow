@@ -4,11 +4,11 @@ Plataforma B2B de gestión de pedidos e inventario, en desarrollo con Java y Spr
 
 ## Estado de esta guía
 
-Guía de desarrollo local para Windows y PowerShell, revisada el 01/11/2026 contra los archivos actuales.
+Guía de desarrollo local para Windows y PowerShell, revisada el 02/11/2026 contra los archivos actuales.
 
 - PostgreSQL por Docker Compose: configuración, healthcheck y conexión SQL verificados durante B1.
 - Backend en Windows: conexión PostgreSQL, arranque JPA/Tomcat y health UP aceptados el 01/11/2026 con logs y resultado entregados por Franco desde IntelliJ. B2.1 aceptada, con ejemplo de variables de Spring inspeccionado y coherente con Compose. La alternativa por wrapper está documentada, todavía sin ejecución comprobada en esta entrega.
-- Todavía no hay frontend, migraciones Liquibase ni prueba de integración con base descartable implementados como entregas aceptadas.
+- Liquibase B2.2 aceptado el 02/11/2026: dos organizaciones con UUIDs esperados, ambos changesets registrados en orden y segundo arranque sin reaplicación/duplicación, según resultados SQL y confirmación de Franco. Frontend y prueba de integración con base descartable aún no implementados como entregas aceptadas.
 
 ## Requisitos
 
@@ -118,6 +118,71 @@ La aplicación queda ejecutándose en esa terminal. Para volver a los comandos d
 
 [Maven y Spring Boot](https://docs.spring.io/spring-boot/maven-plugin/run.html), [variables de entorno en PowerShell](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables).
 
+## Ejecutar los changesets de Liquibase (B2.2)
+
+### Método del proyecto: al arrancar Spring Boot
+
+El POM incluye spring-boot-starter-liquibase. Al iniciar el backend, Spring Boot lee db/changelog/db.changelog-master.yaml del classpath y Liquibase aplica los changesets pendientes usando el DataSource configurado. No hace falta instalar la CLI ni agregar un plugin Maven para esta ruta.
+
+1. Mantener PostgreSQL healthy mediante los comandos de Compose de esta guía.
+2. Elegir una sola ejecución del backend:
+   - IntelliJ: ejecutar o reiniciar StockflowApplication con las tres variables SPRING_DATASOURCE_* ya configuradas.
+   - PowerShell: con Java 21 y esas tres variables disponibles en la misma sesión, entrar a backend/ y ejecutar:
+
+         .\mvnw.cmd spring-boot:run
+
+Desde otra ubicación, la carpeta de este clon es D:\Proyectos\stockflow\StockFlow\backend. Las variables guardadas en IntelliJ no se heredan en una terminal independiente y .env no se carga automáticamente en Spring.
+
+El maestro incluye primero 001-create-organization.sql y después 002-seed-organizations.sql. En una base sin historial previo se esperan dos changesets aplicados: franco:create-organization y franco:seed-organization. Si ya hay cambios registrados, Liquibase aplica únicamente los pendientes.
+
+Para la segunda comprobación, detener sólo Java (Stop de IntelliJ o Ctrl+C), conservar PostgreSQL y volver a iniciar de la misma forma. No se deben volver a insertar las organizaciones.
+
+[Integración Liquibase/Spring Boot](https://docs.spring.io/spring-boot/how-to/data-initialization.html#howto.data-initialization.migration-tool.liquibase), [objetivo spring-boot:run](https://docs.spring.io/spring-boot/maven-plugin/run.html).
+
+### Alternativa: CLI independiente de Liquibase
+
+Esta alternativa requiere instalar la CLI por separado, con una versión compatible con Liquibase del proyecto y el driver JDBC PostgreSQL disponible para esa CLI. El starter no instala el ejecutable liquibase; al documentar esta sección no estaba disponible en el PATH de la sesión del mentor. El POM tampoco configura el plugin Maven de Liquibase: los comandos de esta sección son de la CLI, no objetivos del wrapper Maven.
+
+Antes de usarlos:
+
+- Detener el backend mientras se ejecuta esta ruta de migración.
+- Abrir PowerShell dentro de backend/.
+- Tener PostgreSQL healthy y confirmar la conexión local prevista: 127.0.0.1:5433/stockflow, usuario stockflow. Ajustar el puerto si se eligió otro.
+- Definir LIQUIBASE_COMMAND_PASSWORD como variable de entorno de esa sesión con la contraseña privada de la base; no escribir el secreto en el README ni en argumentos del comando. Las variables SPRING_DATASOURCE_* y el archivo .env no se traducen automáticamente a variables de la CLI.
+
+Comandos para este changelog, una vez cumplidos esos requisitos:
+
+Verificar estructura de Liquibase y referencias (no comprueba que todo el SQL sea válido ni aplica las migraciones de la aplicación; puede inicializar tablas de seguimiento):
+
+    liquibase --search-path=src/main/resources validate --changelog-file=db/changelog/db.changelog-master.yaml --url=jdbc:postgresql://127.0.0.1:5433/stockflow --username=stockflow
+
+Consultar changesets pendientes:
+
+    liquibase --search-path=src/main/resources status --verbose --changelog-file=db/changelog/db.changelog-master.yaml --url=jdbc:postgresql://127.0.0.1:5433/stockflow --username=stockflow
+
+Mostrar el SQL que se aplicaría para inspeccionarlo:
+
+    liquibase --search-path=src/main/resources update-sql --changelog-file=db/changelog/db.changelog-master.yaml --url=jdbc:postgresql://127.0.0.1:5433/stockflow --username=stockflow
+
+Aplicar todos los changesets pendientes del maestro:
+
+    liquibase --search-path=src/main/resources update --changelog-file=db/changelog/db.changelog-master.yaml --url=jdbc:postgresql://127.0.0.1:5433/stockflow --username=stockflow
+
+Consultar status nuevamente después de update; se esperan cero pendientes. search-path apunta a la raíz de recursos para resolver db/changelog/..., igual que el classpath del backend. Al alternar con Spring Boot, conservar la identidad de cada changeset (autor, id y ruta registrada); no cambiar rutas de migraciones ya aplicadas.
+
+Estos comandos de CLI se documentaron contra la referencia oficial, pero no se ejecutaron en esta entrega ni se instaló la CLI. Para B2.2, el método elegido sigue siendo el arranque integrado de Spring Boot.
+
+[validate](https://docs.liquibase.com/community/reference-guide-5-0-4/database-inspection-change-tracking-and-utility-commands/validate), [status](https://docs.liquibase.com/community/reference-guide-5-0-4/database-inspection-change-tracking-and-utility-commands/status), [update-sql](https://docs.liquibase.com/community/reference-guide-5-0-4/init-update-and-rollback-commands/update-sql), [update](https://docs.liquibase.com/community/reference-guide-5-0-4/init-update-and-rollback-commands/update).
+
+### Evidencia para cerrar B2.2
+
+- Logs de Liquibase y arranque satisfactorio del backend.
+- Consulta a public.organization: dos filas con los UUID estables, nombres Norte/Sur y active=true.
+- Consulta al registro databasechangelog: ambos changesets y sus identidades.
+- Segundo arranque sin nuevos cambios para esos archivos, sin duplicación de organizaciones y health UP.
+
+B2.2 aceptado el 02/11/2026 con consultas aportadas por Franco: las dos organizaciones con UUIDs esperados y los changesets create-organization/seed-organization, autor franco, registrados como EXECUTED en orden 1/2 bajo Liquibase 5.0.4. Franco confirmó el segundo arranque sin reaplicación ni duplicación. El mentor no repitió la ejecución. Si aparece después un error de checksum, tabla existente o migración, conservar el mensaje y revisar el historial antes de cambiar un archivo aplicado.
+
 ## Comprobar que está funcionando
 
 - PostgreSQL: docker compose ps desde la raíz debe mostrar healthy.
@@ -148,4 +213,4 @@ B2.1 aceptada el 01/11/2026: el driver PostgreSQL usa runtime y versión adminis
 - .env.example documenta los tres nombres de Spring, con URL local correcta, usuario stockflow y contraseñas de ejemplo sin el secreto privado local.
 - La ejecución desde IntelliJ ya tiene evidencia aceptada de conexión, arranque y health UP. Esto no sustituye las futuras pruebas automatizadas de integración.
 
-La implementación y las correcciones las realizó Franco; el mentor inspeccionó archivos y evaluó la evidencia aportada. Liquibase, sus cambios de esquema y la prueba con PostgreSQL descartable corresponden a las entregas posteriores de SF-001; todavía no hay un comando de test de integración aceptado para documentar.
+La implementación y las correcciones las realizó Franco; el mentor inspeccionó archivos y evaluó la evidencia aportada. B2.2 está aceptada con archivos inspeccionados y evidencia de ejecución aportada por Franco. La prueba con PostgreSQL descartable corresponde a C de SF-001; todavía no hay un comando de test de integración aceptado para documentar.
